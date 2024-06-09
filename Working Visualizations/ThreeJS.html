@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Cubes from Log Data</title>
+  <style>
+    body { margin: 0; background-color: black; }
+    canvas { display: block; }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.149.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // Create scene, camera, and renderer
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Add axis helpers
+    const axesHelper = new THREE.AxesHelper(5);
+    scene.add(axesHelper);
+
+    // Create OrbitControls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+    controls.dampingFactor = 0.25;
+    controls.screenSpacePanning = false;
+    controls.maxPolarAngle = Math.PI / 2;
+
+    // Array to hold cubes for rotation
+    const cubes = [];
+
+    // Recommended levels thresholds
+    const TEMP_THRESHOLD = 30; // °C
+    const CO2_THRESHOLD = 1000; // ppm
+    const HUMIDITY_THRESHOLD = 60; // % RH
+
+    // Load textures
+    const textureLoader = new THREE.TextureLoader();
+    const tempExceedTexture = textureLoader.load('https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/6a6dec94-d43e-4d8e-998a-079d9351b416/d6g7l43-26eb4c1f-8eb1-4eea-ae9f-472f762cc66e.png/v1/fill/w_960,h_639/look_at_me__i_m_burning___dark_alessa_cosplay_by_alicexliddell_d6g7l43-fullview.png?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7ImhlaWdodCI6Ijw9NjM5IiwicGF0aCI6IlwvZlwvNmE2ZGVjOTQtZDQzZS00ZDhlLTk5OGEtMDc5ZDkzNTFiNDE2XC9kNmc3bDQzLTI2ZWI0YzFmLThlYjEtNGVlYS1hZTlmLTQ3MmY3NjJjYzY2ZS5wbmciLCJ3aWR0aCI6Ijw9OTYwIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmltYWdlLm9wZXJhdGlvbnMiXX0.i-0OU0RQICVte3OnqHvQzl1xNzRmfouxLTfCGeavUNA');
+    const humidityExceedTexture = textureLoader.load('https://imgix.ranker.com/list_img_v2/791/2400791/original/what-does-it-feel-like-to-drown?auto=format&q=50&fit=crop&fm=pjpg&dpr=2&crop=faces&h=418.848167539267&w=800');
+    const co2ExceedTexture = textureLoader.load('1fb6e1adbb6c3ca32b2d4f?impolicy=wcms_crop_resize&cropH=1688&cropW=3000&xPos=0&yPos=154&width=862&height=485');
+
+    // Load data
+    const dataFilePath = 'log000.log';
+    fetch(dataFilePath)
+      .then(response => response.text())
+      .then(rawData => {
+        const lines = rawData.split('\n');
+        const points = [];
+
+        lines.forEach(line => {
+          if (line.trim() === '') return;
+          try {
+            const parsedLine = JSON.parse(line);
+            const message = parsedLine.message;
+            const temperature = message.atmp;
+            const co2 = message.rco2;
+            const humidity = message.rhum;
+
+            points.push({ temperature, co2, humidity });
+          } catch (error) {
+            console.error('Error parsing line:', line, error);
+          }
+        });
+
+        // Create cubes based on log data
+        points.forEach(point => {
+          const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+          let material;
+
+          // Determine material based on threshold exceedance
+          if (point.temperature > TEMP_THRESHOLD) {
+            material = new THREE.MeshBasicMaterial({ map: tempExceedTexture });
+          } else if (point.co2 > CO2_THRESHOLD) {
+            material = new THREE.MeshBasicMaterial({ map: co2ExceedTexture });
+          } else if (point.humidity > HUMIDITY_THRESHOLD) {
+            material = new THREE.MeshBasicMaterial({ map: humidityExceedTexture });
+          } else {
+            material = new THREE.MeshBasicMaterial({ color: 0xffffff, opacity: 0.5, transparent: true }); // Default white/transparentish color
+          }
+
+          const cube = new THREE.Mesh(geometry, material);
+
+          // Set position based on temperature, CO2, and humidity
+          cube.position.set(point.temperature - 20, point.co2 / 1000, point.humidity / 100);
+          scene.add(cube);
+
+          // Add cube to the array for rotation
+          cubes.push(cube);
+        });
+      })
+      .catch(error => {
+        console.error('Error fetching or parsing data:', error);
+      });
+
+    camera.position.z = 5;
+
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Rotate each cube
+      cubes.forEach(cube => {
+        cube.rotation.x += 0.01;
+        cube.rotation.y += 0.01;
+      });
+
+      controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</head>
+<body>
+</body>
+</html>

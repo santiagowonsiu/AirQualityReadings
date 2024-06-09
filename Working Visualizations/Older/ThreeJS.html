@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Cubes from Log Data</title>
+  <style>
+    body { margin: 0; background-color: black; }
+    canvas { display: block; }
+  </style>
+  <script type="module">
+    import * as THREE from 'https://threejs.org/build/three.module.js';
+
+    // Create scene, camera, and renderer
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Add axis helpers
+    const axesHelper = new THREE.AxesHelper(5);
+    scene.add(axesHelper);
+
+    // Array to hold cubes for rotation
+    const cubes = [];
+
+    // Load data
+    const dataFilePath = 'log000.log';
+    fetch(dataFilePath)
+      .then(response => response.text())
+      .then(rawData => {
+        const lines = rawData.split('\n');
+        const points = [];
+
+        lines.forEach(line => {
+          if (line.trim() === '') return;
+          try {
+            const parsedLine = JSON.parse(line);
+            const message = parsedLine.message;
+            const time = new Date(parsedLine.time).getTime();
+            const temperature = message.atmp;
+            const co2 = message.rco2;
+            const humidity = message.rhum;
+
+            points.push({ time, temperature, co2, humidity });
+          } catch (error) {
+            console.error('Error parsing line:', line, error);
+          }
+        });
+
+        // Create cubes based on log data
+        points.forEach(point => {
+          const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+          const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+          const cube = new THREE.Mesh(geometry, material);
+          
+          // Set position based on temperature, CO2, and humidity
+          cube.position.set(point.temperature - 20, point.co2 / 1000, point.humidity / 100);
+          scene.add(cube);
+          
+          // Add cube to the array for rotation
+          cubes.push(cube);
+        });
+      });
+
+    camera.position.z = 5;
+
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Rotate each cube
+      cubes.forEach(cube => {
+        cube.rotation.x += 0.01;
+        cube.rotation.y += 0.01;
+      });
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</head>
+<body>
+</body>
+</html>

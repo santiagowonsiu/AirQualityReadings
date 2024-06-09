@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Air Quality Sensor Data Visualization</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+</head>
+<body>
+  <script>
+    const dataFilePath = 'log000.log';
+
+    fetch(dataFilePath)
+      .then(response => response.text())
+      .then(rawData => {
+        const lines = rawData.split('\n');
+        const readings = lines.map(line => {
+          try {
+            return JSON.parse(line);
+          } catch (e) {
+            return null;
+          }
+        }).filter(reading => reading !== null);
+
+        visualizeData(readings);
+      });
+
+    function visualizeData(readings) {
+      let erroneous_count = 0;
+      let gaps_count = 0;
+      let proper_count = 0;
+      let last_time = null;
+
+      for (let i = 0; i < readings.length; i++) {
+        const reading = readings[i];
+        const pm10 = reading.message.pm10;
+
+        if (pm10 < 0) {
+          erroneous_count++;
+        } else {
+          proper_count++;
+        }
+
+        if (last_time !== null) {
+          const current_time = new Date(reading.time).getTime();
+          const time_diff = (current_time - last_time) / 1000;
+          if (time_diff > 120) {
+            gaps_count++;
+          }
+        }
+        last_time = new Date(reading.time).getTime();
+      }
+
+      function setup() {
+        let total = proper_count + erroneous_count + gaps_count;
+        let proper_angle = (proper_count / total) * TWO_PI;
+        let erroneous_angle = (erroneous_count / total) * TWO_PI;
+        let gaps_angle = (gaps_count / total) * TWO_PI;
+
+        let angles = [
+          { angle: proper_angle, color: [102, 204, 255], label: 'Proper Readings' },
+          { angle: erroneous_angle, color: [255, 102, 102], label: 'Erroneous Readings' },
+          { angle: gaps_angle, color: [255, 204, 102], label: 'Gaps in Data Collection' }
+        ];
+
+        createCanvas(800, 600);
+        noStroke();
+        drawBackgroundGradient();
+
+        let startAngle = 0;
+        for (let i = 0; i < angles.length; i++) {
+          fill(angles[i].color);
+          arc(width / 2, height / 2, 400, 400, startAngle, startAngle + angles[i].angle);
+          let midAngle = startAngle + angles[i].angle / 2;
+          let percentage = ((angles[i].angle / TWO_PI) * 100).toFixed(1) + '%';
+          drawLabel(midAngle, percentage);
+          startAngle += angles[i].angle;
+        }
+
+        drawLegend(angles);
+        animatePieChart(angles);
+      }
+
+      function drawBackgroundGradient() {
+        for (let y = 0; y < height; y++) {
+          let inter = map(y, 0, height, 0, 1);
+          let c = lerpColor(color(255, 255, 255), color(102, 153, 204), inter);
+          stroke(c);
+          line(0, y, width, y);
+        }
+      }
+
+      function drawLabel(angle, text) {
+        let x = width / 2 + cos(angle) * 240; // Increased offset to place the labels further out
+        let y = height / 2 + sin(angle) * 240; // Increased offset to place the labels further out
+        fill(0);
+        textAlign(CENTER, CENTER);
+        textSize(16);
+        window.text(text, x, y);
+      }
+
+      function drawLegend(angles) {
+        let legendX = width - 200;
+        let legendY = 50;
+        let boxSize = 20;
+
+        for (let i = 0; i < angles.length; i++) {
+          fill(angles[i].color);
+          rect(legendX, legendY + i * 30, boxSize, boxSize);
+          fill(0);
+          textAlign(LEFT, CENTER);
+          textSize(16);
+          text(angles[i].label, legendX + boxSize + 10, legendY + i * 30 + boxSize / 2);
+        }
+      }
+
+      function animatePieChart(angles) {
+        let startAngle = 0;
+        let currentAngle = 0;
+        let speed = 0.05;
+
+        function draw() {
+          drawBackgroundGradient();
+
+          for (let i = 0; i < angles.length; i++) {
+            fill(angles[i].color);
+            let endAngle = startAngle + min(angles[i].angle, currentAngle);
+            arc(width / 2, height / 2, 400, 400, startAngle, endAngle);
+            startAngle += angles[i].angle;
+            if (currentAngle < angles[i].angle) break;
+          }
+
+          currentAngle += speed;
+          if (currentAngle > TWO_PI) noLoop();
+
+          startAngle = 0;
+          for (let i = 0; i < angles.length; i++) {
+            let midAngle = startAngle + angles[i].angle / 2;
+            let percentage = ((angles[i].angle / TWO_PI) * 100).toFixed(1) + '%';
+            drawLabel(midAngle, percentage);
+            startAngle += angles[i].angle;
+          }
+
+          drawLegend(angles);
+        }
+
+        window.draw = draw;
+      }
+
+      window.setup = setup;
+    }
+  </script>
+</body>
+</html>

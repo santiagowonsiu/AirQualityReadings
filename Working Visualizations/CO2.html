@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Air Quality Visualization by Classroom</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: black;
+      color: white;
+    }
+    .chart-container {
+      margin: 50px;
+    }
+    .axis-label {
+      font-size: 12px;
+      font-weight: bold;
+      text-anchor: middle;
+    }
+    .tooltip {
+      position: absolute;
+      background-color: white;
+      border: 1px solid #ccc;
+      padding: 5px;
+      border-radius: 5px;
+      pointer-events: none;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+      color: black;
+    }
+    .title {
+      text-align: center;
+      font-size: 24px;
+      margin-top: 20px;
+    }
+    .legend {
+      font-size: 12px;
+    }
+    .legend rect {
+      stroke-width: 2;
+    }
+    .neon-text {
+      font-size: 20px;
+      fill: white;
+      font-weight: bold;
+    }
+    .neon-circle {
+      stroke: #fff;
+      stroke-width: 1px;
+      filter: url(#glow);
+    }
+  </style>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+  <div class="title">Air Quality Visualization by Classroom</div>
+  <div id="chart"></div>
+  <div class="tooltip" style="display: none;"></div>
+  <script>
+    // Path to your data file
+    const dataFilePath = 'log000.log';  // Ensure this path is correct
+
+    // Neon color palette
+    const neonColors = ["#00FF00", "#FF00FF", "#00FFFF", "#FFFF00", "#FF0000", "#FF9900", "#33FFCC", "#FF66FF", "#66FF33", "#FF3399"];
+
+    // Fetch and process the data
+    d3.text(dataFilePath).then(rawData => {
+      // Split the file content by lines
+      const lines = rawData.split('\n');
+
+      // Parse each line as JSON and separate by classroom
+      const dataByClassroom = {};
+      lines.forEach(line => {
+        if (line.trim() === '') return;  // Ignore empty lines
+        try {
+          const parsedLine = JSON.parse(line);
+          const classroom = parsedLine.topic.split('/').pop();
+          if (!dataByClassroom[classroom]) {
+            dataByClassroom[classroom] = [];
+          }
+          const parsedMessage = parsedLine.message;  // message is already an object
+          dataByClassroom[classroom].push({
+            time: new Date(parsedLine.time),
+            rco2: parsedMessage.rco2,
+            atmp: parsedMessage.atmp,
+            rhum: parsedMessage.rhum,
+            tvoc_index: parsedMessage.tvoc_index,
+            nox_index: parsedMessage.nox_index,
+            pm003_count: parsedMessage.pm003_count,
+            pm01: parsedMessage.pm01,
+            pm02: parsedMessage.pm02,
+            pm10: parsedMessage.pm10
+          });
+        } catch (error) {
+          console.error('Error parsing line:', line, error);
+        }
+      });
+
+      // Log the loaded data to the console for debugging
+      console.log('Loaded Data by Classroom:', dataByClassroom);
+
+      // Ensure data is parsed correctly
+      if (!Object.keys(dataByClassroom).length) {
+        console.error('No data loaded');
+        return;
+      }
+
+      // Set dimensions and margins
+      const margin = {top: 20, right: 150, bottom: 50, left: 60},
+            width = 900 - margin.left - margin.right,
+            height = 500 - margin.top - margin.bottom;
+
+      // Append the SVG object to the body of the page
+      const svg = d3.select("#chart")
+        .append("svg")
+          .attr("width", width + margin.left + margin.right)
+          .attr("height", height + margin.top + margin.bottom)
+          .style("background-color", "black")
+        .append("g")
+          .attr("transform", `translate(${margin.left},${margin.top})`);
+
+      // Define glow filter
+      const defs = svg.append("defs");
+
+      const filter = defs.append("filter")
+          .attr("id", "glow");
+
+      filter.append("feGaussianBlur")
+          .attr("stdDeviation", "3.5")
+          .attr("result", "coloredBlur");
+
+      const feMerge = filter.append("feMerge");
+      feMerge.append("feMergeNode")
+          .attr("in", "coloredBlur");
+      feMerge.append("feMergeNode")
+          .attr("in", "SourceGraphic");
+
+      // Set the scales
+      const x = d3.scaleTime()
+        .domain(d3.extent([].concat(...Object.values(dataByClassroom)), d => d.time))
+        .range([0, width]);
+      const y = d3.scaleLinear()
+        .domain([0, d3.max([].concat(...Object.values(dataByClassroom)), d => d.rco2)])
+        .range([height, 0]);
+
+      // Add the x-axis
+      svg.append("g")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(x).tickSize(-height).tickPadding(10))
+        .selectAll("text")
+        .style("fill", "white");
+
+      // Add the y-axis
+      svg.append("g")
+        .call(d3.axisLeft(y).tickSize(-width).tickPadding(10))
+        .selectAll("text")
+        .style("fill", "white");
+
+      // Add axis labels
+      svg.append("text")
+        .attr("class", "axis-label")
+        .attr("x", width / 2)
+        .attr("y", height + 40)
+        .attr("fill", "white")
+        .text("Time");
+
+      svg.append("text")
+        .attr("class", "axis-label")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -height / 2)
+        .attr("y", -50)
+        .attr("fill", "white")
+        .text("CO2 Level (ppm)");
+
+      // Add gridlines
+      const makeXGridlines = () => d3.axisBottom(x).ticks(10);
+      const makeYGridlines = () => d3.axisLeft(y).ticks(10);
+
+      svg.append("g")
+        .attr("class", "grid")
+        .attr("transform", `translate(0,${height})`)
+        .call(makeXGridlines()
+          .tickSize(-height)
+          .tickFormat("")
+        );
+
+      svg.append("g")
+        .attr("class", "grid")
+        .call(makeYGridlines()
+          .tickSize(-width)
+          .tickFormat("")
+        );
+
+      // Add the lines
+      Object.keys(dataByClassroom).forEach((classroom, index) => {
+        const line = d3.line()
+          .x(d => x(d.time))
+          .y(d => y(d.rco2));
+
+        svg.append("path")
+          .datum(dataByClassroom[classroom])
+          .attr("fill", "none")
+          .attr("stroke", neonColors[index % neonColors.length])
+          .attr("stroke-width", 2)
+          .attr("d", line);
+
+        // Add circles for tooltip
+        svg.selectAll(`dot-${classroom}`)
+          .data(dataByClassroom[classroom])
+          .enter().append("circle")
+            .attr("r", 4)
+            .attr("cx", d => x(d.time))
+            .attr("cy", d => y(d.rco2))
+            .attr("fill", d => d.rco2 > 1000 ? "white" : neonColors[index % neonColors.length])
+            .attr("class", d => d.rco2 > 1000 ? "neon-circle" : "")
+            .on("mouseover", (event, d) => {
+              tooltip.style("display", "block")
+                .html(`Time: ${d.time}<br>CO2: ${d.rco2} ppm<br>Classroom: ${classroom}`);
+            })
+            .on("mousemove", (event) => {
+              tooltip.style("top", (event.pageY - 10) + "px")
+                .style("left", (event.pageX + 10) + "px");
+            })
+            .on("mouseout", () => {
+              tooltip.style("display", "none");
+            });
+      });
+
+      // Add legend
+      const legend = svg.selectAll(".legend")
+        .data(Object.keys(dataByClassroom))
+        .enter().append("g")
+          .attr("class", "legend")
+          .attr("transform", (d, i) => `translate(0,${i * 20})`);
+
+      legend.append("rect")
+        .attr("x", width + 10)
+        .attr("width", 18)
+        .attr("height", 18)
+        .style("fill", (d, i) => neonColors[i % neonColors.length]);
+
+      legend.append("text")
+        .attr("x", width + 40)
+        .attr("y", 9)
+        .attr("dy", ".35em")
+        .style("text-anchor", "start")
+        .style("fill", "white")
+        .text(d => `Classroom: ${d}`);
+
+              // Check if paths are drawn
+      console.log('Paths added to SVG');
+    }).catch(error => {
+      console.error('Error loading or parsing data:', error);
+    });
+  </script>
+</body>
+</html>
+        

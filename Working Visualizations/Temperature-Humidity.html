@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Temperature and Humidity Heatmap by Classroom</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: black;
+      color: white;
+    }
+    .chart-container {
+      display: flex;
+      flex-direction: column;
+      margin: 50px;
+    }
+    .chart-content {
+      display: flex;
+      align-items: flex-start;
+    }
+    .axis-label {
+      font-size: 12px;
+      font-weight: bold;
+      text-anchor: middle;
+    }
+    .tooltip {
+      position: absolute;
+      background-color: white;
+      border: 1px solid #ccc;
+      padding: 5px;
+      border-radius: 5px;
+      pointer-events: none;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+      color: black;
+    }
+    .title {
+      text-align: center;
+      font-size: 24px;
+      margin-top: 40px;
+    }
+    .classroom-title {
+      text-align: center;
+      font-size: 20px;
+      margin: 40px 0;
+    }
+    .legend {
+      font-size: 12px;
+      font-weight: bold;
+      text-anchor: middle;
+    }
+    .analysis {
+      margin-left: 20px;
+      font-size: 14px;
+      color: white;
+      max-width: 300px;
+    }
+  </style>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+  <div class="title">Temperature and Humidity Heatmap by Classroom</div>
+  <div id="charts"></div>
+  <div class="tooltip" style="display: none;"></div>
+  <script>
+    // Path to your data file
+    const dataFilePath = 'log000.log';  // Ensure this path is correct
+
+    // Fetch and process the data
+    d3.text(dataFilePath).then(rawData => {
+      // Split the file content by lines
+      const lines = rawData.split('\n');
+
+      // Parse each line as JSON and separate by classroom
+      const dataByClassroom = {};
+      lines.forEach(line => {
+        if (line.trim() === '') return;  // Ignore empty lines
+        try {
+          const parsedLine = JSON.parse(line);
+          const classroom = parsedLine.topic.split('/').pop();
+          if (!dataByClassroom[classroom]) {
+            dataByClassroom[classroom] = [];
+          }
+          const parsedMessage = parsedLine.message;  // message is already an object
+          dataByClassroom[classroom].push({
+            time: new Date(parsedLine.time),
+            atmp: parsedMessage.atmp,
+            rhum: parsedMessage.rhum
+          });
+        } catch (error) {
+          console.error('Error parsing line:', line, error);
+        }
+      });
+
+      // Log the loaded data to the console for debugging
+      console.log('Loaded Data by Classroom:', dataByClassroom);
+
+      // Ensure data is parsed correctly
+      if (!Object.keys(dataByClassroom).length) {
+        console.error('No data loaded');
+        return;
+      }
+
+      // Function to create a heatmap for a given classroom
+      const createHeatmap = (classroom, data) => {
+        // Set dimensions and margins
+        const margin = {top: 20, right: 30, bottom: 70, left: 60},
+              width = 700 - margin.left - margin.right,
+              height = 500 - margin.top - margin.bottom;
+
+        // Append the SVG object to the body of the page
+        const container = d3.select("#charts")
+          .append("div")
+          .attr("class", "chart-container");
+
+        const chartContent = container.append("div")
+          .attr("class", "chart-content");
+
+        const svg = chartContent.append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .style("background-color", "black")
+          .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        // Set the scales
+        const x = d3.scaleTime()
+          .domain(d3.extent(data, d => d.time))
+          .range([0, width]);
+        const y = d3.scaleLinear()
+          .domain([d3.min(data, d => d.atmp), d3.max(data, d => d.atmp)])
+          .range([height, 0]);
+        const color = d3.scaleSequential(d3.interpolateInferno)
+          .domain([d3.min(data, d => d.rhum), d3.max(data, d => d.rhum)]);
+
+        // Add the x-axis
+        svg.append("g")
+          .attr("transform", `translate(0,${height})`)
+          .call(d3.axisBottom(x).ticks(10))
+          .selectAll("text")
+          .style("fill", "white");
+
+        // Add the y-axis
+        svg.append("g")
+          .call(d3.axisLeft(y).ticks(10))
+          .selectAll("text")
+          .style("fill", "white");
+
+        // Add axis labels
+        svg.append("text")
+          .attr("class", "axis-label")
+          .attr("x", width / 2)
+          .attr("y", height + 40)
+          .attr("fill", "white")
+          .text("Time");
+
+        svg.append("text")
+          .attr("class", "axis-label")
+          .attr("transform", "rotate(-90)")
+          .attr("x", -height / 2)
+          .attr("y", -50)
+          .attr("fill", "white")
+          .text("Temperature (°C)");
+
+        // Add the heatmap
+        svg.selectAll()
+          .data(data)
+          .enter()
+          .append("rect")
+          .attr("x", d => x(d.time))
+          .attr("y", d => y(d.atmp))
+          .attr("width", 2)
+          .attr("height", 2)
+          .style("fill", d => color(d.rhum));
+
+        // Add classroom title
+        svg.append("text")
+          .attr("x", width / 2)
+          .attr("y", -10)
+          .attr("text-anchor", "middle")
+          .attr("fill", "white")
+          .attr("class", "classroom-title")
+          .text(`Classroom: ${classroom}`);
+
+        // Add color legend
+        const legendWidth = 300;
+        const legendHeight = 20;
+        const legendMargin = { top: 50, right: 10, bottom: 50, left: 10 };
+        
+        const legendSvg = chartContent.append("svg")
+            .attr("width", legendWidth + legendMargin.left + legendMargin.right)
+            .attr("height", legendHeight + legendMargin.top + legendMargin.bottom)
+            .attr("class", "legend")
+          .append("g")
+            .attr("transform", `translate(${legendMargin.left},${legendMargin.top})`);
+
+        const legendScale = d3.scaleLinear()
+          .domain(color.domain())
+          .range([0, legendWidth]);
+
+        const legendAxis = d3.axisBottom(legendScale)
+          .ticks(5)
+          .tickFormat(d => `${d}%`);
+
+        legendSvg.append("g")
+          .attr("transform", `translate(0,${legendHeight})`)
+          .call(legendAxis)
+          .selectAll("text")
+          .style("fill", "white");
+
+        const legendGradient = legendSvg.append("defs")
+          .append("linearGradient")
+          .attr("id", "legend-gradient");
+
+        legendGradient.selectAll("stop")
+          .data(color.ticks().map((t, i, n) => ({ offset: `${100 * i / n.length}%`, color: color(t) })))
+          .enter().append("stop")
+          .attr("offset", d => d.offset)
+          .attr("stop-color", d => d.color);
+
+        legendSvg.append("rect")
+          .attr("width", legendWidth)
+          .attr("height", legendHeight)
+          .style("fill", "url(#legend-gradient)");
+
+        // Add text descriptions for legend
+        legendSvg.append("text")
+          .attr("class", "legend-label")
+          .attr("x", 0)
+          .attr("y", legendHeight + 40)
+          .attr("fill", "white")
+          .text("Low Humidity");
+
+        legendSvg.append("text")
+          .attr("class", "legend-label")
+          .attr("x", legendWidth / 2)
+          .attr("y", legendHeight + 40)
+          .attr("fill", "white")
+          .style("text-anchor", "middle")
+          .text("Medium Humidity");
+
+        legendSvg.append("text")
+          .attr("class", "legend-label")
+          .attr("x", legendWidth)
+          .attr("y", legendHeight + 40)
+          .attr("fill", "white")
+          .style("text-anchor", "end")
+          .text("High Humidity");
+
+        // Add analysis conclusions
+        const avgTemp = d3.mean(data, d => d.atmp);
+        const avgHumidity = d3.mean(data, d => d.rhum);
+        const analysisText = `Analysis for Classroom ${classroom}:
+          - Average Temperature: ${avgTemp.toFixed(2)}°C
+          - Average Humidity: ${avgHumidity.toFixed(2)}%
+          - Max Temperature: ${d3.max(data, d => d.atmp).toFixed(2)}°C
+          - Min Temperature: ${d3.min(data, d => d.atmp).toFixed(2)}°C
+          - Max Humidity: ${d3.max(data, d => d.rhum).toFixed(2)}%
+          - Min Humidity: ${d3.min(data, d => d.rhum).toFixed(2)}%`;
+
+        chartContent.append("div")
+          .attr("class", "analysis")
+          .text(analysisText);
+
+        // Check if heatmap is drawn
+        console.log(`Heatmap added to SVG for classroom ${classroom}`);
+      };
+
+      // Create a heatmap for each classroom
+      Object.keys(dataByClassroom).forEach(classroom => {
+        createHeatmap(classroom, dataByClassroom[classroom]);
+      });
+    }).catch(error => {
+      console.error('Error loading or parsing data:', error);
+    });
+  </script>
+</body>
+</html>
+

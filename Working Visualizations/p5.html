@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Air Quality Sensor Data Visualization</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+</head>
+<body>
+  <script>
+    const dataFilePath = 'log000.log';
+
+    fetch(dataFilePath)
+      .then(response => response.text())
+      .then(rawData => {
+        const lines = rawData.split('\n');
+        const readings = lines.map(line => {
+          try {
+            return JSON.parse(line);
+          } catch (e) {
+            return null;
+          }
+        }).filter(reading => reading !== null);
+
+        setupVisualization(readings);
+      });
+
+    function setupVisualization(readings) {
+      function setup() {
+        createCanvas(1200, 600);
+        background(220);
+        
+        let xPos = 50;
+        let yPos = height - 100;
+        let barWidth = (width - 100) / readings.length;
+        let yScale = 4; // Adjust scale to properly fit the graph
+        let yMax = 100;
+
+        strokeWeight(2);
+
+        // Get the start and end time for the x-axis
+        let startTime = new Date(readings[0].time).getTime();
+        let endTime = new Date(readings[readings.length - 1].time).getTime();
+        let timeSpan = endTime - startTime;
+
+        for (let i = 0; i < readings.length; i++) {
+          let reading = readings[i];
+          let pm10 = reading.message.pm10;
+          let currentTime = new Date(reading.time).getTime();
+          let x = map(currentTime, startTime, endTime, 50, width - 50);
+          let barHeight = pm10 * yScale;
+
+          if (pm10 < 0) {
+            fill(255, 0, 0); // Red color for erroneous readings
+            rect(x, yPos - 5, barWidth, 5); // Draw a thin red bar
+          } else if (pm10 > 100) {
+            fill(255, 0, 0); // Red for hazardous levels
+            rect(x, yPos - barHeight, barWidth, barHeight);
+          } else if (pm10 > 50) {
+            fill(255, 165, 0); // Orange for moderate levels
+            rect(x, yPos - barHeight, barWidth, barHeight);
+          } else {
+            fill(0, 255, 0); // Green for safe levels
+            rect(x, yPos - barHeight, barWidth, barHeight);
+          }
+
+          if (i > 0) {
+            let previousReading = readings[i - 1];
+            let previousTime = new Date(previousReading.time).getTime();
+            let prevX = map(previousTime, startTime, endTime, 50, width - 50);
+            let timeDiff = (currentTime - previousTime) / 1000;
+            if (timeDiff > 120) {
+              stroke(255, 255, 0); // Yellow color for gaps
+              line(prevX + barWidth / 2, yPos, x + barWidth / 2, yPos); // Draw yellow line for gaps
+            }
+          }
+        }
+
+        // Draw x-axis
+        stroke(0);
+        line(50, yPos, width - 50, yPos);
+        
+        // Draw time labels
+        textAlign(CENTER);
+        textSize(12);
+        fill(0);
+        let numLabels = 10;
+        for (let i = 0; i <= numLabels; i++) {
+          let labelTime = new Date(startTime + (timeSpan / numLabels) * i);
+          let labelX = map(labelTime.getTime(), startTime, endTime, 50, width - 50);
+          text(labelTime.toLocaleTimeString(), labelX, yPos + 20);
+          stroke(200);
+          line(labelX, yPos - 5, labelX, yPos + 5);
+        }
+
+        // Draw y-axis
+        stroke(0);
+        line(50, yPos, 50, yPos - yMax * yScale);
+        
+        // Draw PM10 labels on y-axis
+        textAlign(RIGHT);
+        for (let i = 0; i <= yMax; i += 10) {
+          let labelY = yPos - i * yScale;
+          text(i, 40, labelY + 5);
+          stroke(200);
+          line(45, labelY, 55, labelY);
+        }
+
+        // Draw vertical y-axis label
+        push();
+        translate(15, height / 2);
+        rotate(-HALF_PI);
+        textAlign(CENTER);
+        text('PM10 Concentration (µg/m³)', 0, 0);
+        pop();
+
+        // Labels and title
+        fill(0);
+        textAlign(CENTER);
+        textSize(16);
+        text('Air Quality Sensor Data Visualization', width / 2, 30);
+        textSize(12);
+        text('Yellow lines indicate gaps in data collection', width / 2, 70);
+
+      }
+
+      window.setup = setup;
+    }
+  </script>
+</body>
+</html>
